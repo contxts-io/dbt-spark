@@ -467,7 +467,7 @@ class JDBCKyuubiConnectionWrapper(object):
             self._cursor.execute(sql)
         except Exception as exc:
             logger.debug("Exception while executing query: {}".format(exc))
-            raise dbt.exceptions.RuntimeException(str(exc)) from exc
+            raise dbt.exceptions.DbtRuntimeError(str(exc)) from exc
 
     @classmethod
     def _fix_binding(cls, value):
