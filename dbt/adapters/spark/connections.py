@@ -70,7 +70,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
         logger.debug("setup_jpype: jar exists")
     else:
         logger.debug("setup_jpype: jar does not exist")
-        import os
         import urllib.request
 
         url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
