@@ -67,29 +67,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
         return
 
     logger.debug("setup_jpype: starting...")
-    if pathlib.Path(os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")).exists():
-        logger.debug("setup_jpype: jar exists")
-    else:
-        logger.debug("setup_jpype: jar does not exist")
-
-        url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
-
-        logger.debug("setup_jpype: downloading jar...")
-        os.makedirs(os.path.join(os.path.dirname(__file__), "jars"), exist_ok=True)
-
-        urllib.request.urlretrieve(
-            url, os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")
-        )
-        logger.debug("setup_jpype: jar downloaded")
-    jpype.startJVM(
-        jpype.getDefaultJVMPath(),
-        "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
-    )
-    logger.debug("setup_jpype: started")
-
-    logger.debug("setup_jpype: attaching thread...")
-    jpype.attachThreadToJVM()
-    logger.debug("setup_jpype: attached")
 
     def _convert_java_binary(rs, col):
         # https://github.com/originell/jpype/issues/71
@@ -173,6 +150,30 @@ def _jdbc_kyuubi_init_jpype() -> None:
             "LONGNVARCHAR": _convert_java_bigstring,
         }
     )
+
+    if pathlib.Path(os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")).exists():
+        logger.debug("setup_jpype: jar exists")
+    else:
+        logger.debug("setup_jpype: jar does not exist")
+
+        url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
+
+        logger.debug("setup_jpype: downloading jar...")
+        os.makedirs(os.path.join(os.path.dirname(__file__), "jars"), exist_ok=True)
+
+        urllib.request.urlretrieve(
+            url, os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")
+        )
+        logger.debug("setup_jpype: jar downloaded")
+    jpype.startJVM(
+        jpype.getDefaultJVMPath(),
+        "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
+    )
+    logger.debug("setup_jpype: started")
+
+    logger.debug("setup_jpype: attaching thread...")
+    jpype.attachThreadToJVM()
+    logger.debug("setup_jpype: attached")
 
     logger.debug("setup_jpype: done")
     JDBC_KYUUBI_JPYPE_SETUP = True
