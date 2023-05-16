@@ -68,6 +68,7 @@ def _jdbc_kyuubi_init_jpype() -> None:
         jpype.getDefaultJVMPath(),
         "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
     )
+    jpype.attachThreadToJVM()
 
     def _convert_java_binary(rs, col):
         # https://github.com/originell/jpype/issues/71
