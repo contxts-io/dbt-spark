@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
-import sys
 import re
+import sys
 
 # require python 3.7 or newer
 if sys.version_info < (3, 7):
@@ -59,8 +59,9 @@ pyhive_extras = [
     "PyHive[hive]>=0.6.0,<0.7.0",
     "thrift>=0.11.0,<0.17.0",
 ]
+jdbc_kyuubi_extras = ["jaydebeapi>=1.2.3,<2.0.0"]
 session_extras = ["pyspark>=3.0.0,<4.0.0"]
-all_extras = odbc_extras + pyhive_extras + session_extras
+all_extras = odbc_extras + pyhive_extras + session_extras + jdbc_kyuubi_extras
 
 setup(
     name=package_name,
@@ -81,6 +82,7 @@ setup(
         "ODBC": odbc_extras,
         "PyHive": pyhive_extras,
         "session": session_extras,
+        "jdbc_kyuubi": jdbc_kyuubi_extras,
         "all": all_extras,
     },
     zip_safe=False,

@@ -1,17 +1,19 @@
+import os
 from contextlib import contextmanager
 
 import dbt.exceptions
 from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
-from dbt.contracts.connection import ConnectionState, AdapterResponse
+from dbt.contracts.connection import AdapterResponse, ConnectionState
 from dbt.events import AdapterLogger
 from dbt.utils import DECIMALS
+
 from dbt.adapters.spark import __version__
 
 try:
+    from pyhive import hive
     from TCLIService.ttypes import TOperationState as ThriftState
     from thrift.transport import THttpClient
-    from pyhive import hive
 except ImportError:
     ThriftState = None
     THttpClient = None
@@ -20,19 +22,29 @@ try:
     import pyodbc
 except ImportError:
     pyodbc = None
-from datetime import datetime
-import sqlparams
-
-from hologram.helpers import StrEnum
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Union
 
 try:
-    from thrift.transport.TSSLSocket import TSSLSocket
-    import thrift
+    import jaydebeapi
+    import jpype
+    from jaydebeapi import _DEFAULT_CONVERTERS, _java_to_py
+except ImportError:
+    jpype = None
+    jaydebeapi = None
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, Optional, Union
+
+import sqlparams
+from hologram.helpers import StrEnum
+
+try:
     import ssl
+
     import sasl
+    import thrift
     import thrift_sasl
+    from thrift.transport.TSSLSocket import TSSLSocket
 except ImportError:
     pass  # done deliberately: setting modules to None explicitly violates MyPy contracts by degrading type semantics
 
@@ -41,7 +53,106 @@ import time
 
 logger = AdapterLogger("Spark")
 
+JDBC_KYUUBI_JPYPE_SETUP = False
+
 NUMBERS = DECIMALS + (int, float)
+
+
+def _jdbc_kyuubi_init_jpype() -> None:
+    global JDBC_KYUUBI_JPYPE_SETUP
+
+    if JDBC_KYUUBI_JPYPE_SETUP:
+        return
+
+    jpype.startJVM(
+        jpype.getDefaultJVMPath(),
+        "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
+    )
+
+    def _convert_java_binary(rs, col):
+        # https://github.com/originell/jpype/issues/71
+        # http://stackoverflow.com/questions/5088671
+        # https://github.com/baztian/jaydebeapi/blob/master/jaydebeapi/__init__.py
+        # https://msdn.microsoft.com/en-us/library/ms378813(v=sql.110).aspx
+        # http://stackoverflow.com/questions/2920364/checking-for-a-null-int-value-from-a-java-resultset  # noqa
+
+        v = None
+        logger.debug("_convert_java_binary: converting...")
+        time1 = time.time()
+        try:
+            # ---------------------------------------------------------------------
+            # Method 1: 3578880 bytes in 21.7430660725 seconds =   165 kB/s
+            # ---------------------------------------------------------------------
+            # java_val = rs.getObject(col)
+            # if java_val is None:
+            #     return
+            # t = str(type(java_val))
+            # if t == "<class 'jpype._jarray.byte[]'>": ...
+            # v = ''.join(map(lambda x: chr(x % 256), java_val))
+
+            # ---------------------------------------------------------------------
+            # Method 2: 3578880 bytes in 8.07930088043 seconds =   442 kB/s
+            # ---------------------------------------------------------------------
+            # java_val = rs.getObject(col)
+            # if java_val is None:
+            #     return
+            # l = len(java_val)
+            # v = bytearray(l)
+            # for i in xrange(l):
+            #     v[i] = java_val[i] % 256
+
+            # ---------------------------------------------------------------------
+            # Method 3: 3578880 bytes in 20.1435189247 seconds =   177 kB/s
+            # ---------------------------------------------------------------------
+            # java_val = rs.getObject(col)
+            # if java_val is None:
+            #     return
+            # v = bytearray(map(lambda x: x % 256, java_val))
+
+            # ---------------------------------------------------------------------
+            # Method 4: 3578880 bytes in 0.48352599144 seconds = 7,402 kB/s
+            # ---------------------------------------------------------------------
+            j_hexstr = rs.getString(col)
+            if rs.wasNull():
+                return
+            v = binascii.unhexlify(j_hexstr)
+
+        finally:
+            time2 = time.time()
+            logger.debug("... done (in {} seconds)".format(time2 - time1))
+            return v
+
+    def _convert_java_bigstring(rs, col):
+        v = str(rs.getCharacterStream(col))
+        if rs.wasNull():
+            return None
+        return v
+
+    def _convert_java_bigint(rs, col):
+        # http://stackoverflow.com/questions/26899595
+        # https://github.com/baztian/jaydebeapi/issues/6
+        # https://github.com/baztian/jaydebeapi/blob/master/jaydebeapi/__init__.py
+        # https://docs.oracle.com/javase/7/docs/api/java/math/BigInteger.html
+        # http://docs.oracle.com/javase/7/docs/api/java/sql/ResultSet.html
+        java_val = rs.getObject(col)
+        if java_val is None:
+            return
+        v = getattr(java_val, "toString")()  # Java call: java_val.toString()
+        return int(v)
+
+    _DEFAULT_CONVERTERS.update(
+        {
+            "BIGINT": _convert_java_bigint,
+            "BINARY": _convert_java_binary,  # overrides an existing one
+            "BLOB": _convert_java_binary,
+            "LONGVARBINARY": _convert_java_binary,
+            "VARBINARY": _convert_java_binary,
+            "LONGVARCHAR": _convert_java_bigstring,
+            "LONGNVARCHAR": _convert_java_bigstring,
+        }
+    )
+
+    JDBC_KYUUBI_JPYPE_SETUP = True
 
 
 def _build_odbc_connnection_string(**kwargs) -> str:
@@ -53,6 +164,7 @@ class SparkConnectionMethod(StrEnum):
     HTTP = "http"
     ODBC = "odbc"
     SESSION = "session"
+    JDBC_KYUUBI = "jdbc_kyuubi"
 
 
 @dataclass
@@ -112,19 +224,25 @@ class SparkCredentials(Credentials):
 
         if self.method == SparkConnectionMethod.ODBC and self.cluster and self.endpoint:
             raise dbt.exceptions.DbtRuntimeError(
-                "`cluster` and `endpoint` cannot both be set when"
-                f" using {self.method} method to connect to Spark"
+                "`cluster` and `endpoint` cannot both be set when" f" using {self.method} method to connect to Spark"
             )
 
-        if (
-            self.method == SparkConnectionMethod.HTTP
-            or self.method == SparkConnectionMethod.THRIFT
-        ) and not (ThriftState and THttpClient and hive):
+        if (self.method == SparkConnectionMethod.HTTP or self.method == SparkConnectionMethod.THRIFT) and not (
+            ThriftState and THttpClient and hive
+        ):
             raise dbt.exceptions.DbtRuntimeError(
                 f"{self.method} connection method requires "
                 "additional dependencies. \n"
                 "Install the additional required dependencies with "
                 "`pip install dbt-spark[PyHive]`"
+            )
+
+        if self.method == SparkConnectionMethod.JDBC_KYUUBI and not (jaydebeapi and jpype):  # and jpype.isJVMStarted()
+            raise dbt.exceptions.DbtRuntimeError(
+                f"{self.method} connection method requires "
+                "additional dependencies. \n"
+                "Install the additional required dependencies with "
+                "`pip install dbt-spark[jdbc_kyuubi]`"
             )
 
         if self.method == SparkConnectionMethod.SESSION:
@@ -237,9 +355,7 @@ class PyhiveConnectionWrapper(object):
 
         elif state not in STATE_SUCCESS:
             status_type = ThriftState._VALUES_TO_NAMES.get(state, "Unknown<{!r}>".format(state))
-            raise dbt.exceptions.DbtDatabaseError(
-                "Query failed with status: {}".format(status_type)
-            )
+            raise dbt.exceptions.DbtDatabaseError("Query failed with status: {}".format(status_type))
 
         logger.debug("Poll status: {}, query complete".format(state))
 
@@ -271,6 +387,71 @@ class PyodbcConnectionWrapper(PyhiveConnectionWrapper):
             query = sqlparams.SQLParams("format", "qmark")
             sql, bindings = query.format(sql, bindings)
             self._cursor.execute(sql, *bindings)
+
+
+class JDBCKyuubiConnectionWrapper(object):
+    """Wrap a Spark connection in a way that no-ops transactions"""
+
+    def __init__(self, handle):
+        self.handle = handle
+        self._cursor = None
+
+    def cursor(self):
+        self._cursor = self.handle.cursor()
+        return self
+
+    def cancel(self):
+        if self._cursor:
+            # Handle bad response in the pyhive lib when
+            # the connection is cancelled
+            try:
+                self._cursor.cancel()
+            except EnvironmentError as exc:
+                logger.debug("Exception while cancelling query: {}".format(exc))
+
+    def close(self):
+        if self._cursor:
+            # Handle bad response in the pyhive lib when
+            # the connection is cancelled
+            try:
+                self._cursor.close()
+            except EnvironmentError as exc:
+                logger.debug("Exception while closing cursor: {}".format(exc))
+        self.handle.close()
+
+    def rollback(self, *args, **kwargs):
+        logger.debug("NotImplemented: rollback")
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def execute(self, sql, bindings=None):
+        if sql.strip().endswith(";"):
+            sql = sql.strip()[:-1]
+
+        if bindings is not None:
+            bindings = [self._fix_binding(binding) for binding in bindings]
+
+        try:
+            self._cursor.execute(sql)
+        except Exception as exc:
+            logger.debug("Exception while executing query: {}".format(exc))
+            raise dbt.exceptions.RuntimeException(str(exc)) from exc
+
+    @classmethod
+    def _fix_binding(cls, value):
+        """Convert complex datatypes to primitives that can be loaded by
+        the Spark driver"""
+        if isinstance(value, NUMBERS):
+            return float(value)
+        elif isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        else:
+            return value
+
+    @property
+    def description(self):
+        return self._cursor.description
 
 
 class SparkConnectionManager(SQLConnectionManager):
@@ -327,8 +508,7 @@ class SparkConnectionManager(SQLConnectionManager):
         for key in required:
             if not hasattr(creds, key):
                 raise dbt.exceptions.DbtProfileError(
-                    "The config '{}' is required when using the {} method"
-                    " to connect to Spark".format(key, method)
+                    "The config '{}' is required when using the {} method" " to connect to Spark".format(key, method)
                 )
 
     @classmethod
@@ -404,22 +584,23 @@ class SparkConnectionManager(SQLConnectionManager):
                             organization=creds.organization, cluster=creds.cluster
                         )
                     elif creds.endpoint is not None:
-                        required_fields = ["driver", "host", "port", "token", "endpoint"]
-                        http_path = cls.SPARK_SQL_ENDPOINT_HTTP_PATH.format(
-                            endpoint=creds.endpoint
-                        )
+                        required_fields = [
+                            "driver",
+                            "host",
+                            "port",
+                            "token",
+                            "endpoint",
+                        ]
+                        http_path = cls.SPARK_SQL_ENDPOINT_HTTP_PATH.format(endpoint=creds.endpoint)
                     else:
                         raise dbt.exceptions.DbtProfileError(
-                            "Either `cluster` or `endpoint` must set when"
-                            " using the odbc method to connect to Spark"
+                            "Either `cluster` or `endpoint` must set when" " using the odbc method to connect to Spark"
                         )
 
                     cls.validate_creds(creds, required_fields)
 
                     dbt_spark_version = __version__.version
-                    user_agent_entry = (
-                        f"dbt-labs-dbt-spark/{dbt_spark_version} (Databricks)"  # noqa
-                    )
+                    user_agent_entry = f"dbt-labs-dbt-spark/{dbt_spark_version} (Databricks)"  # noqa
 
                     # http://simba.wpengine.com/products/Spark/doc/ODBC_InstallGuide/unix/content/odbc/hi/configuring/serverside.htm
                     ssp = {f"SSP_{k}": f"{{{v}}}" for k, v in creds.server_side_parameters.items()}
@@ -443,17 +624,24 @@ class SparkConnectionManager(SQLConnectionManager):
 
                     conn = pyodbc.connect(connection_str, autocommit=True)
                     handle = PyodbcConnectionWrapper(conn)
-                elif creds.method == SparkConnectionMethod.SESSION:
-                    from .session import (  # noqa: F401
-                        Connection,
-                        SessionConnectionWrapper,
+                elif creds.method == SparkConnectionMethod.JDBC_KYUUBI:
+                    cls.validate_creds(creds, ["host", "port", "user"])
+
+                    _jdbc_kyuubi_init_jpype()
+                    conn = jaydebeapi.connect(
+                        "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
+                        f"jdbc:hive2://{creds.host}:{creds.port}",
+                        {"user": creds.user, "password": creds.password},
+                        jars=[os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")],
                     )
+                    handle = JDBCKyuubiConnectionWrapper(conn)
+                elif creds.method == SparkConnectionMethod.SESSION:
+                    from .session import Connection  # noqa: F401
+                    from .session import SessionConnectionWrapper
 
                     handle = SessionConnectionWrapper(Connection())
                 else:
-                    raise dbt.exceptions.DbtProfileError(
-                        f"invalid credential method: {creds.method}"
-                    )
+                    raise dbt.exceptions.DbtProfileError(f"invalid credential method: {creds.method}")
                 break
             except Exception as e:
                 exc = e
