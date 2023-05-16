@@ -1,5 +1,6 @@
 import os
 import pathlib
+import urllib.request
 from contextlib import contextmanager
 
 import dbt.exceptions
@@ -70,7 +71,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
         logger.debug("setup_jpype: jar exists")
     else:
         logger.debug("setup_jpype: jar does not exist")
-        import urllib.request
 
         url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
 
@@ -654,6 +654,9 @@ class SparkConnectionManager(SQLConnectionManager):
                     _jdbc_kyuubi_init_jpype()
                     logger.debug("JDBC_KYUUBI: connecting")
                     try:
+                        logger.debug(
+                            f"""JDBC_KYUUBI: connection try info: {["org.apache.kyuubi.jdbc.KyuubiHiveDriver", f"jdbc:hive2://{creds.host}:{creds.port}", {"user": creds.user, "password": creds.password}, [os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")]]}"""
+                        )
                         conn = jaydebeapi.connect(
                             "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
                             f"jdbc:hive2://{creds.host}:{creds.port}",
