@@ -1,4 +1,5 @@
 import os
+import pathlib
 from contextlib import contextmanager
 
 import dbt.exceptions
@@ -65,6 +66,18 @@ def _jdbc_kyuubi_init_jpype() -> None:
         return
 
     logger.debug("setup_jpype: starting...")
+    if pathlib.Path(os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")).exists():
+        logger.debug("setup_jpype: jar exists")
+    else:
+        logger.debug("setup_jpype: jar does not exist")
+        # download jar
+        import urllib.request
+
+        url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
+        urllib.request.urlretrieve(
+            url, os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")
+        )
+        logger.debug("setup_jpype: jar downloaded")
     jpype.startJVM(
         jpype.getDefaultJVMPath(),
         "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
