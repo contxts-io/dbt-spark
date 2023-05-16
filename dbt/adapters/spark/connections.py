@@ -448,7 +448,10 @@ class JDBCKyuubiConnectionWrapper(object):
         logger.debug("NotImplemented: rollback")
 
     def fetchall(self):
-        return self._cursor.fetchall()
+        data = self._cursor.fetchall()
+        logger.debug("Fetched {} rows".format(len(data)))
+        logger.debug("Fetchall: {}".format(data))
+        return data
 
     def execute(self, sql, bindings=None):
         if sql.strip().endswith(";"):
