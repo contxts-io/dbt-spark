@@ -166,14 +166,17 @@ def _jdbc_kyuubi_init_jpype() -> None:
             url, os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")
         )
         logger.debug("setup_jpype: jar downloaded")
-    jpype.startJVM(
-        jpype.getDefaultJVMPath(),
-        "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
-    )
+    # jpype.startJVM(
+    #     jpype.getDefaultJVMPath(),
+    #     "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
+    #     ignoreUnrecognized=True,
+    #     convertStrings=True,
+    # )
     logger.debug("setup_jpype: started")
 
     logger.debug("setup_jpype: attaching thread...")
-    jpype.attachThreadToJVM()
+    # jpype.attachThreadToJVM()
+    # jpype.java.lang.Thread.currentThread().setContextClassLoader(jpype.java.lang.ClassLoader.getSystemClassLoader())
     logger.debug("setup_jpype: attached")
 
     logger.debug("setup_jpype: done")
@@ -659,8 +662,9 @@ class SparkConnectionManager(SQLConnectionManager):
                     _jdbc_kyuubi_init_jpype()
                     logger.debug("JDBC_KYUUBI: connecting")
                     try:
+                        # 'org.apache.kyuubi.jdbc.KyuubiHiveDriver', 'jdbc:hive2://kyuubi.dev.nftbank.tools:10009', ['young', ''], '/Users/phyyou/.pyenv/versions/3.9.15/envs/data-baseplate-3.9.15/lib/python3.9/site-packages/dbt/adapters/spark/jars/kyuubi-hive-jdbc-shaded-1.7.0.jar']
                         logger.debug(
-                            f"""JDBC_KYUUBI: connection try info: {["org.apache.kyuubi.jdbc.KyuubiHiveDriver", f"jdbc:hive2://{creds.host}:{creds.port}", {"user": creds.user, "password": creds.password}, [os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")]]}"""
+                            f"""JDBC_KYUUBI: connection try info: {["org.apache.kyuubi.jdbc.KyuubiHiveDriver", f"jdbc:hive2://{creds.host}:{creds.port}", [creds.user, creds.password] , os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")]}"""
                         )
                         conn = jaydebeapi.connect(
                             "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
