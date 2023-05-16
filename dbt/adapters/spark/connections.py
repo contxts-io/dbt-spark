@@ -70,10 +70,14 @@ def _jdbc_kyuubi_init_jpype() -> None:
         logger.debug("setup_jpype: jar exists")
     else:
         logger.debug("setup_jpype: jar does not exist")
-        # download jar
+        import os
         import urllib.request
 
         url = "https://repo1.maven.org/maven2/org/apache/kyuubi/kyuubi-hive-jdbc-shaded/1.7.0/kyuubi-hive-jdbc-shaded-1.7.0.jar"
+
+        logger.debug("setup_jpype: downloading jar...")
+        os.makedirs(os.path.join(os.path.dirname(__file__), "jars"), exist_ok=True)
+
         urllib.request.urlretrieve(
             url, os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")
         )
