@@ -660,8 +660,8 @@ class SparkConnectionManager(SQLConnectionManager):
                         conn = jaydebeapi.connect(
                             "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
                             f"jdbc:hive2://{creds.host}:{creds.port}",
-                            {"user": creds.user, "password": creds.password},
-                            jars=[os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")],
+                            [creds.user, creds.password if creds.password is not None else ""],
+                            os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
                         )
                     except Exception as e:
                         logger.debug("JDBC_KYUUBI: failed to connect", e)
