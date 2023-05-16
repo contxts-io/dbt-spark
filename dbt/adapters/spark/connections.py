@@ -64,16 +64,16 @@ def _jdbc_kyuubi_init_jpype() -> None:
     if JDBC_KYUUBI_JPYPE_SETUP:
         return
 
-    print("setup_jpype: starting...")
+    logger.debug("setup_jpype: starting...")
     jpype.startJVM(
         jpype.getDefaultJVMPath(),
         "-Djava.class.path=%s" % os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar"),
     )
-    print("setup_jpype: started")
+    logger.debug("setup_jpype: started")
 
-    print("setup_jpype: attaching thread...")
+    logger.debug("setup_jpype: attaching thread...")
     jpype.attachThreadToJVM()
-    print("setup_jpype: attached")
+    logger.debug("setup_jpype: attached")
 
     def _convert_java_binary(rs, col):
         # https://github.com/originell/jpype/issues/71
@@ -158,7 +158,7 @@ def _jdbc_kyuubi_init_jpype() -> None:
         }
     )
 
-    print("setup_jpype: done")
+    logger.debug("setup_jpype: done")
     JDBC_KYUUBI_JPYPE_SETUP = True
 
 
@@ -632,11 +632,11 @@ class SparkConnectionManager(SQLConnectionManager):
                     conn = pyodbc.connect(connection_str, autocommit=True)
                     handle = PyodbcConnectionWrapper(conn)
                 elif creds.method == SparkConnectionMethod.JDBC_KYUUBI:
-                    print("JDBC_KYUUBI")
+                    logger.debug("JDBC_KYUUBI")
                     cls.validate_creds(creds, ["host", "port", "user"])
 
                     _jdbc_kyuubi_init_jpype()
-                    print("JDBC_KYUUBI: connecting")
+                    logger.debug("JDBC_KYUUBI: connecting")
                     try:
                         conn = jaydebeapi.connect(
                             "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
@@ -645,7 +645,7 @@ class SparkConnectionManager(SQLConnectionManager):
                             jars=[os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")],
                         )
                     except Exception as e:
-                        print("JDBC_KYUUBI: failed to connect", e)
+                        logger.debug("JDBC_KYUUBI: failed to connect", e)
                         raise e
                     handle = JDBCKyuubiConnectionWrapper(conn)
                 elif creds.method == SparkConnectionMethod.SESSION:
