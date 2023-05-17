@@ -67,8 +67,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
     if JDBC_KYUUBI_JPYPE_SETUP:
         return
 
-    logger.debug("setup_jpype: starting...")
-
     def _convert_java_binary(rs, col):
         # https://github.com/originell/jpype/issues/71
         # http://stackoverflow.com/questions/5088671
@@ -77,7 +75,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
         # http://stackoverflow.com/questions/2920364/checking-for-a-null-int-value-from-a-java-resultset  # noqa
 
         v = None
-        logger.debug("_convert_java_binary: converting...")
         time1 = time.time()
         try:
             # ---------------------------------------------------------------------
@@ -119,7 +116,6 @@ def _jdbc_kyuubi_init_jpype() -> None:
 
         finally:
             time2 = time.time()
-            logger.debug("... done (in {} seconds)".format(time2 - time1))
             return v
 
     def _convert_java_bigstring(rs, col):
@@ -172,14 +168,9 @@ def _jdbc_kyuubi_init_jpype() -> None:
     #     ignoreUnrecognized=True,
     #     convertStrings=True,
     # )
-    logger.debug("setup_jpype: started")
 
-    logger.debug("setup_jpype: attaching thread...")
     # jpype.attachThreadToJVM()
     # jpype.java.lang.Thread.currentThread().setContextClassLoader(jpype.java.lang.ClassLoader.getSystemClassLoader())
-    logger.debug("setup_jpype: attached")
-
-    logger.debug("setup_jpype: done")
     JDBC_KYUUBI_JPYPE_SETUP = True
 
 
@@ -438,7 +429,6 @@ class JDBCKyuubiConnectionWrapper(object):
                 logger.debug("Exception while cancelling query: {}".format(exc))
 
     def close(self):
-        logger.debug("Closing connection")
         if self._cursor:
             # Handle bad response in the pyhive lib when
             # the connection is cancelled
@@ -448,15 +438,12 @@ class JDBCKyuubiConnectionWrapper(object):
                 logger.debug("Exception while closing cursor: {}".format(exc))
         self.handle.close()
         jpype.detachThreadFromJVM()
-        logger.debug("Closed connection")
 
     def rollback(self, *args, **kwargs):
         logger.debug("NotImplemented: rollback")
 
     def fetchall(self):
         data = self._cursor.fetchall()
-        logger.debug("Fetched {} rows".format(len(data)))
-        logger.debug("Fetchall: {}".format(data))
         return data
 
     def execute(self, sql, bindings=None):
@@ -659,15 +646,13 @@ class SparkConnectionManager(SQLConnectionManager):
                     conn = pyodbc.connect(connection_str, autocommit=True)
                     handle = PyodbcConnectionWrapper(conn)
                 elif creds.method == SparkConnectionMethod.JDBC_KYUUBI:
-                    logger.debug("JDBC_KYUUBI")
                     cls.validate_creds(creds, ["host", "port", "user"])
 
                     _jdbc_kyuubi_init_jpype()
-                    logger.debug("JDBC_KYUUBI: connecting")
                     try:
                         # 'org.apache.kyuubi.jdbc.KyuubiHiveDriver', 'jdbc:hive2://kyuubi.dev.nftbank.tools:10009', ['young', ''], '/Users/phyyou/.pyenv/versions/3.9.15/envs/data-baseplate-3.9.15/lib/python3.9/site-packages/dbt/adapters/spark/jars/kyuubi-hive-jdbc-shaded-1.7.0.jar']
                         logger.debug(
-                            f"""JDBC_KYUUBI: connection try info: {["org.apache.kyuubi.jdbc.KyuubiHiveDriver", f"jdbc:hive2://{creds.host}:{creds.port}", [creds.user, creds.password] , os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")]}"""
+                            f"""JDBC_KYUUBI: connection info: {["org.apache.kyuubi.jdbc.KyuubiHiveDriver", f"jdbc:hive2://{creds.host}:{creds.port}", [creds.user, creds.password] , os.path.join(os.path.dirname(__file__), "jars", "kyuubi-hive-jdbc-shaded-1.7.0.jar")]}"""
                         )
                         conn = jaydebeapi.connect(
                             "org.apache.kyuubi.jdbc.KyuubiHiveDriver",
