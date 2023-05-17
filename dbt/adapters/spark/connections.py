@@ -320,7 +320,6 @@ class PyhiveConnectionWrapper(object):
                 logger.debug("Exception while cancelling query: {}".format(exc))
 
     def close(self):
-        logger.debug("Closing connection")
         if self._cursor:
             # Handle bad response in the pyhive lib when
             # the connection is cancelled
@@ -329,8 +328,6 @@ class PyhiveConnectionWrapper(object):
             except EnvironmentError as exc:
                 logger.debug("Exception while closing cursor: {}".format(exc))
         self.handle.close()
-        jpype.detachThreadFromJVM()
-        logger.debug("Closed connection")
 
     def rollback(self, *args, **kwargs):
         logger.debug("NotImplemented: rollback")
@@ -441,6 +438,7 @@ class JDBCKyuubiConnectionWrapper(object):
                 logger.debug("Exception while cancelling query: {}".format(exc))
 
     def close(self):
+        logger.debug("Closing connection")
         if self._cursor:
             # Handle bad response in the pyhive lib when
             # the connection is cancelled
@@ -449,6 +447,8 @@ class JDBCKyuubiConnectionWrapper(object):
             except EnvironmentError as exc:
                 logger.debug("Exception while closing cursor: {}".format(exc))
         self.handle.close()
+        jpype.detachThreadFromJVM()
+        logger.debug("Closed connection")
 
     def rollback(self, *args, **kwargs):
         logger.debug("NotImplemented: rollback")
