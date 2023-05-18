@@ -74,10 +74,10 @@ setup(
     url="https://github.com/dbt-labs/dbt-spark",
     packages=find_namespace_packages(include=["dbt", "dbt.*"]),
     include_package_data=True,
-    install_requires=[
+    install_requires=list([
         "dbt-core~={}".format(dbt_core_version),
         "sqlparams>=3.0.0",
-    ],
+    ]),
     extras_require={
         "ODBC": odbc_extras,
         "PyHive": pyhive_extras,
