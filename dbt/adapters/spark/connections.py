@@ -450,6 +450,11 @@ class JDBCKyuubiConnectionWrapper(object):
         if sql.strip().endswith(";"):
             sql = sql.strip()[:-1]
 
+        # Escape '?' by replacing with '\?' to avoid issues with Parameter is not set
+        # error in Kyuubi JDBC driver <org.apache.kyuubi.jdbc.hive.KyuubiSQLException: Parameter # is unset>
+        # Ref: https://github.com/apache/kyuubi/blob/master/kyuubi-hive-jdbc/src/main/java/org/apache/kyuubi/jdbc/hive/Utils.java#LL141C1-L141C1
+        sql.replace("?", "\?")
+
         if bindings is not None:
             bindings = [self._fix_binding(binding) for binding in bindings]
 
